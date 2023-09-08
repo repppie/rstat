@@ -344,7 +344,9 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
 		printf("      %g [%g %g]\n", diff, diff + ql * stddev(b),
 		    diff + qu * stddev(b));
-		printf("      %lf%%\n", diff * 100 / d1->mean);
+		printf("      %lf%% [%g%% %g%%]\n", diff * 100 / d1->mean,
+		    (diff + ql * stddev(b)) * 100 / d1->mean,
+		    (diff + qu * stddev(b)) * 100 / d1->mean);
 	}
 	printf("      (%d bootstrap samples, p-val %g t %g se %g seed %d)\n",
 	    boots, p, t, stddev(b), seed);
@@ -396,7 +398,9 @@ permute(struct dataset *d1, struct dataset *d2)
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
 		printf("      %g [%g %g]\n", diff, diff + ql * stddev(f),
 		    diff + qu * stddev(f));
-		printf("      %lf%%\n", diff * 100 / d1->mean);
+		printf("      %lf%% [%g%% %g%%]\n", diff * 100 / d1->mean,
+		    (diff + ql * stddev(f)) * 100 / d1->mean,
+		    (diff + qu * stddev(f)) * 100 / d1->mean);
 	}
 	printf("      (%d permutations, p-val %g t %g se %g seed %d)\n", perms,
 	    p, t, stddev(f), seed);
