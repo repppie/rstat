@@ -19,7 +19,7 @@ struct dataset {
 };
 
 int col = 1;
-int perms, seed;
+int boots, perms, seed;
 double conf = 0.95;
 #define	MAX_DS 8
 char sym[MAX_DS] = " x+*%#@O";
@@ -243,7 +243,7 @@ read_data(char *file)
 	return (d);
 }
 
-/* Destructively samples with no replacement. */
+/* Destructively samples without replacement. */
 struct dataset *
 sample_no_repl(struct dataset *o, int n)
 {
@@ -269,6 +269,21 @@ sample_no_repl(struct dataset *o, int n)
 	return (d);
 }
 
+/* Samples with replacement */
+struct dataset *
+sample_repl(struct dataset *o, int n)
+{
+	struct dataset *d;
+	int i, r;
+
+	d = new_dataset();
+	for (i = 0; i < n; i++) {
+		r = randint(o->n - 1);
+		add_data(d, o->vals[r]);
+	}
+	return (d);
+}
+
 double
 welch_tstat(struct dataset *d1, struct dataset *d2)
 {
@@ -283,6 +298,59 @@ welch_tstat(struct dataset *d1, struct dataset *d2)
 }
 
 /*
+ * Bootstrapped t-test without equality of variance.
+ * See Algorithm 16.2 in Efron and Tibshirani (1993).
+ */
+void
+bootstrap(struct dataset *d1, struct dataset *d2)
+{
+	struct dataset *b, *d, *dd1, *dd2, *n1, *n2;
+	double diff, p, ql, qu, t;
+	int i, g;
+
+	t = welch_tstat(d1, d2);
+	diff = d2->mean - d1->mean;
+	d = copy_dataset(d1);
+	for (i = 0; i < d2->n; i++)
+		add_data(d, d2->vals[i]);
+	n1 = new_dataset();
+	for (i = 0; i < d1->n; i++)
+		add_data(n1, d1->vals[i] - d1->mean + d->mean);
+	n2 = new_dataset();
+	for (i = 0; i < d2->n; i++)
+		add_data(n2, d2->vals[i] - d2->mean + d->mean);
+	b = new_dataset();
+
+	g = 0;
+	for (i = 0; i < boots; i++) {
+		dd1 = sample_repl(n1, n1->n);
+		dd2 = sample_repl(n2, n2->n);
+		/* Two-tailed */
+		if (fabs(welch_tstat(dd1, dd2)) >= fabs(t))
+			g++;
+		add_data(b, welch_tstat(dd1, dd2));
+		free_dataset(dd1);
+		free_dataset(dd2);
+	}
+	qsort(b->vals, b->n, sizeof(double), cmp);
+
+	p = (g + 1.0) / (boots + 1.0);
+	ql = quantile(b, (1 - conf) / 2);
+	qu = quantile(b, 1 - (1 - conf) / 2);
+	if (p > 1.0 - conf)
+		printf("No difference proven at %.1f%% confidence\n", 100 *
+		    conf);
+	else {
+		printf("Difference at %.1f%% confidence\n", 100 * conf);
+		printf("      %g [%g %g]\n", diff, diff + ql * stddev(b),
+		    diff + qu * stddev(b));
+		printf("      %lf%%\n", diff * 100 / d1->mean);
+	}
+	printf("      (%d bootstrap samples, p-val %g t %g se %g seed %d)\n",
+	    boots, p, t, stddev(b), seed);
+}
+
+/*
  * Permutation test
  * (In theory we don't gain anything by using the t-statistic instead of just
  * the difference in means. See problem 15.9 in Efron and Tibshirani (1993)).
@@ -291,9 +359,10 @@ void
 permute(struct dataset *d1, struct dataset *d2)
 {
 	struct dataset *d, *dd1, *dd2, *f;
-	double lq, p, t, uq;
+	double diff, p, ql, qu, t;
 	int i, g;
 
+	diff = d2->mean - d1->mean;
 	t = welch_tstat(d1, d2);
 	d = copy_dataset(d1);
 	for (i = 0; i < d2->n; i++)
@@ -317,18 +386,20 @@ permute(struct dataset *d1, struct dataset *d2)
 	 * XXX We can just look if p < alpha (not p * 2 < alpha), without
 	 * looking if we're in the extreme quantiles.
 	 */
-	lq = quantile(f, (1 - conf) / 2);
-	uq = quantile(f, 1 - (1 - conf) / 2);
+	ql = quantile(f, (1 - conf) / 2);
+	qu = quantile(f, 1 - (1 - conf) / 2);
 	p = (g + 1.0) / (perms + 1.0);
-	if (t > lq && t < uq)
+	if (t > ql && t < qu)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
-		printf("      %g\n", d2->mean - d1->mean);
-		printf("      %lf%%\n", (d2->mean - d1->mean) * 100 / d1->mean);
+		printf("      %g [%g %g]\n", diff, diff + ql * stddev(f),
+		    diff + qu * stddev(f));
+		printf("      %lf%%\n", diff * 100 / d1->mean);
 	}
-	printf("      (%d Permutations, p-val %g seed %d)\n", perms, p, seed);
+	printf("      (%d permutations, p-val %g t %g se %g seed %d)\n", perms,
+	    p, t, stddev(f), seed);
 }
 
 /* Welch's t-test */
@@ -401,8 +472,11 @@ main(int argc, char **argv)
 
 	seed = time(NULL);
 
-	while ((c = getopt(argc, argv, "c:C:p:s:")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:C:p:s:")) != -1) {
 		switch (c) {
+		case 'b':
+			boots = atoi(optarg);
+			break;
 		case 'c':
 			conf = strtod(optarg, NULL) / 100.0;
 			if (conf <= 0 || conf >= 1)
@@ -426,6 +500,8 @@ main(int argc, char **argv)
 
 	if (argc < 2)
 		usage();
+	if (boots && perms)
+		errx(1, "Only one of -b and -p can be set");
 
 	d1 = read_data(argv[0]);
 	d2 = read_data(argv[1]);
@@ -437,7 +513,9 @@ main(int argc, char **argv)
 	summary(d1, sym[1]);
 	summary(d2, sym[2]);
 
-	if (perms)
+	if (boots)
+		bootstrap(d1, d2);
+	else if (perms)
 		permute(d1, d2);
 	else
 		welch(d1, d2);
