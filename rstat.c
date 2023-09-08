@@ -498,7 +498,7 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc < 2)
+	if (argc < 1)
 		usage();
 	if (boots && perms)
 		errx(1, "Only one of -b and -p can be set");
