@@ -1,14 +1,18 @@
 /* Heavily inspired by ministat */
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <math.h>
 #include <err.h>
 #include <time.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <string_view>
+
 
 struct dataset {
 	int n;
@@ -22,8 +26,8 @@ struct dataset {
 int col = 1;
 int boots, perms, seed;
 double conf = 0.95;
-#define	MAX_DS 8
-char sym[MAX_DS] = " x+*%#@O";
+constexpr int MAX_DS = 8;
+constexpr std::string_view sym = " x+*%#@O";
 int nds;
 
 long
@@ -121,10 +125,10 @@ quantile(struct dataset *d, double q)
 int
 cmp(const void *_a, const void *_b)
 {
-	double *a, *b;
+	const double *a, *b;
 
-	a = (void *)_a;
-	b = (void *)_b;
+	a = reinterpret_cast<const double*>(_a);
+	b = reinterpret_cast<const double*>(_b);
 	if (*a < *b)
 		return (-1);
 	else if (*a > *b)
@@ -137,10 +141,10 @@ new_dataset(void)
 {
 	struct dataset *d;
 
-	d = malloc(sizeof(struct dataset));
+	d = new dataset;
 	memset(d, 0, sizeof(struct dataset));
 	d->vs = 8;
-	d->vals = malloc(d->vs * sizeof(double));
+	d->vals = reinterpret_cast<double*>(malloc(d->vs * sizeof(double)));
 	return (d);
 }
 
@@ -149,7 +153,7 @@ free_dataset(struct dataset *d)
 {
 	/* XXX leaks name */
 	free(d->vals);
-	free(d);
+	delete d;
 }
 
 struct dataset *
@@ -157,9 +161,9 @@ copy_dataset(struct dataset *old)
 {
 	struct dataset *d;
 
-	d = malloc(sizeof(struct dataset));
+	d = new dataset;
 	memcpy(d, old, sizeof(struct dataset));
-	d->vals = malloc(d->vs * sizeof(double));
+	d->vals = reinterpret_cast<double*>(malloc(d->vs * sizeof(double)));
 	memcpy(d->vals, old->vals, d->vs * sizeof(double));
 	return (d);
 }
@@ -171,7 +175,7 @@ add_data(struct dataset *d, double v)
 
 	if (d->n >= d->vs) {
 		d->vs *= 2;
-		d->vals = realloc(d->vals, d->vs * sizeof(double));
+		d->vals = reinterpret_cast<double*>(realloc(d->vals, d->vs * sizeof(double)));
 	}
 	d->vals[d->n++] = v;
 	/* Calculate mean and variance online */
@@ -192,7 +196,7 @@ read_data(char *file)
 		err(1, "open");
 	if (fstat(fd, &st) != 0)
 		err(1, "fstat");
-	if ((m = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd,
+	if ((m = (char*)mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd,
 	    0)) == MAP_FAILED)
 		err(1, "mmap");
 	end = m + st.st_size;
@@ -242,7 +246,7 @@ sample_no_repl(struct dataset *o, int n)
 		add_data(d, o->vals[r]);
 		o->vals[r] = o->vals[--o->n];
 	}
-	v = malloc(o->vs * sizeof(double));
+	v = reinterpret_cast<double*>(malloc(o->vs * sizeof(double)));
 	memcpy(v, o->vals, o->n * sizeof(double));
 	old_n = o->n;
 	o->n = o->mean = o->ss = 0;
