@@ -431,10 +431,10 @@ summary(struct dataset *d, char s)
 	iqr = q3 - q1;
 	out = xout = 0;
 	for (i = 0; i < d->n; i++) {
-		if (d->vals[i] <= q1 - 3.0 * iqr || d->vals[i] >= q3 + 3.0 *
+		if (d->vals[i] < q1 - 3.0 * iqr || d->vals[i] > q3 + 3.0 *
 		    iqr)
 			xout++;
-		else if (d->vals[i] <= q1 - 1.5 * iqr || d->vals[i] >= q3 +
+		else if (d->vals[i] < q1 - 1.5 * iqr || d->vals[i] > q3 +
 		    1.5 * iqr)
 			out++;
 	}
