@@ -468,6 +468,7 @@ usage(void)
 	fprintf(stderr, "\t-b : Bootstrapped t-test with n samples\n");
 	fprintf(stderr, "\t-C : Column number to extract (starts at 1)\n");
 	fprintf(stderr, "\t-c : Confidence in percent (defaults to 95)\n");
+	fprintf(stderr, "\t-n : Print summary statistics only, no test\n");
 	fprintf(stderr, "\t-p : Permutation test with n permutations\n");
 	fprintf(stderr, "\t-s : Random seed\n");
 	
@@ -479,11 +480,12 @@ main(int argc, char **argv)
 {
 	struct dataset *d1, *d2;
 	char c;
-	int i;
+	int i, no_test;
 
 	seed = time(NULL);
 
-	while ((c = getopt(argc, argv, "b:c:C:p:s:")) != -1) {
+	no_test = 0;
+	while ((c = getopt(argc, argv, "b:c:C:np:s:")) != -1) {
 		switch (c) {
 		case 'b':
 			boots = atoi(optarg);
@@ -495,6 +497,9 @@ main(int argc, char **argv)
 			break;
 		case 'C':
 			col = atoi(optarg);
+			break;
+		case 'n':
+			no_test = 1;
 			break;
 		case 'p':
 			perms = atoi(optarg);
@@ -526,12 +531,14 @@ main(int argc, char **argv)
 	while (--argc) {
 		d2 = read_data(argv[0]);
 		summary(d2, sym[++nds]);
-		if (boots)
-			bootstrap(d1, d2);
-		else if (perms)
-			permute(d1, d2);
-		else
-			welch(d1, d2);
+		if (!no_test) {
+			if (boots)
+				bootstrap(d1, d2);
+			else if (perms)
+				permute(d1, d2);
+			else
+				welch(d1, d2);
+		}
 		argv++;
 	}
 
