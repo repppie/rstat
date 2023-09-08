@@ -38,7 +38,6 @@ integ(double lower, double upper, int m, double a,
 	double h, s0, s1, s2;
 	int i;
 
-#if 1
 	/* Simpson's rule */
 	s1 = s2 = 0;
 	s0 = (*f)(lower, a) + (*f)(upper, a);
@@ -48,22 +47,6 @@ integ(double lower, double upper, int m, double a,
 	for (i = 2; i <= m * 2 - 2; i += 2)
 		s2 += (*f)(lower + i * h, a);
 	return (h / 3.0 * (s0 + 4.0 * s1 + 2.0 * s2));
-#else
-	h = (upper - lower) / m;
-	s0 = 0;
-	printf("h %lf\n", h);
-#if 1
-	/* Trapezoidal rule */
-	for (i = 1; i < m; i++)
-		s0 += (*f)(lower + i * h, a, b);
-	return (h * (s0 + (*f)(lower, a, b) / 2.0 + (*f)(upper, a, b) / 2.0));
-#else
-	/* Midpoint rule */
-	for (i = 0; i < m; i++)
-		s0 += (*f)(lower + i * h + h / 2.0, a, b);
-	return (h * s0);
-#endif
-#endif
 }
 
 /* t distribution pdf */
