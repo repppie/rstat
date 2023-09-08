@@ -6,7 +6,7 @@ OBJS = $(SRCS:.c=.o)
 
 CC = gcc
 yacc = yacc
-CFLAGS = -Wall -g -O2
+CFLAGS = -Wall -g
 LDFLAGS += -lm
 
 all: $(PROG)

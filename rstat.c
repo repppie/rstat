@@ -19,10 +19,17 @@ struct dataset {
 };
 
 int col = 1;
+int perms, seed;
 double conf = 0.95;
 #define	MAX_DS 8
 char sym[MAX_DS] = " x+*%#@O";
 int nds;
+
+long
+randint(int max)
+{
+	return ((max + 1) * (random() * 1.0 / RAND_MAX));
+}
 
 double
 integ(double lower, double upper, int m, double a,
@@ -154,6 +161,26 @@ new_dataset(void)
 }
 
 void
+free_dataset(struct dataset *d)
+{
+	/* XXX leaks name */
+	free(d->vals);
+	free(d);
+}
+
+struct dataset *
+copy_dataset(struct dataset *old)
+{
+	struct dataset *d;
+
+	d = malloc(sizeof(struct dataset));
+	memcpy(d, old, sizeof(struct dataset));
+	d->vals = malloc(d->vs * sizeof(double));
+	memcpy(d->vals, old->vals, d->vs * sizeof(double));
+	return (d);
+}
+
+void
 add_data(struct dataset *d, double v)
 {
 	double dt;
@@ -216,6 +243,94 @@ read_data(char *file)
 	return (d);
 }
 
+/* Destructively samples with no replacement. */
+struct dataset *
+sample_no_repl(struct dataset *o, int n)
+{
+	struct dataset *d;
+	double *v;
+	int i, old_n, r;
+
+	d = new_dataset();
+	if (n >= o->n)
+		errx(1, "sample_no_repl");
+	for (i = 0; i < n; i++) {
+		r = randint(o->n - 1);
+		add_data(d, o->vals[r]);
+		o->vals[r] = o->vals[--o->n];
+	}
+	v = malloc(o->vs * sizeof(double));
+	memcpy(v, o->vals, o->n * sizeof(double));
+	old_n = o->n;
+	o->n = o->mean = o->ss = 0;
+	for (i = 0; i < old_n; i++)
+		add_data(o, v[i]);
+	free(v);
+	return (d);
+}
+
+double
+welch_tstat(struct dataset *d1, struct dataset *d2)
+{
+	double se, se1, se2, t;
+
+	se1 = sqrt(var(d1) / d1->n);
+	se2 = sqrt(var(d2) / d2->n);
+	se = sqrt(se1 * se1 + se2 * se2);
+	t = d2->mean - d1->mean;
+	t /= se;
+	return (t);
+}
+
+/*
+ * Permutation test
+ * (In theory we don't gain anything by using the t-statistic instead of just
+ * the difference in means. See problem 15.9 in Efron and Tibshirani (1993)).
+ */
+void
+permute(struct dataset *d1, struct dataset *d2)
+{
+	struct dataset *d, *dd1, *dd2, *f;
+	double lq, p, t, uq;
+	int i, g;
+
+	t = welch_tstat(d1, d2);
+	d = copy_dataset(d1);
+	for (i = 0; i < d2->n; i++)
+		add_data(d, d2->vals[i]);
+	f = new_dataset();
+
+	g = 0;
+	for (i = 0; i < perms; i++) {  
+		dd2 = copy_dataset(d);
+		dd1 = sample_no_repl(dd2, d1->n);
+		/* Two-tailed */
+		if (fabs(welch_tstat(dd1, dd2)) >= fabs(t))
+			g++;
+		add_data(f, welch_tstat(dd1, dd2));
+		free_dataset(dd1);
+		free_dataset(dd2);
+	}
+	qsort(f->vals, f->n, sizeof(double), cmp);
+
+	/*
+	 * XXX We can just look if p < alpha (not p * 2 < alpha), without
+	 * looking if we're in the extreme quantiles.
+	 */
+	lq = quantile(f, (1 - conf) / 2);
+	uq = quantile(f, 1 - (1 - conf) / 2);
+	p = (g + 1.0) / (perms + 1.0);
+	if (t > lq && t < uq)
+		printf("No difference proven at %.1f%% confidence\n", 100 *
+		    conf);
+	else {
+		printf("Difference at %.1f%% confidence\n", 100 * conf);
+		printf("      %g\n", d2->mean - d1->mean);
+		printf("      %lf%%\n", (d2->mean - d1->mean) * 100 / d1->mean);
+	}
+	printf("      (%d Permutations, p-val %g seed %d)\n", perms, p, seed);
+}
+
 /* Welch's t-test */
 void
 welch(struct dataset *d1, struct dataset *d2)
@@ -230,16 +345,16 @@ welch(struct dataset *d1, struct dataset *d2)
 	dof = pow(se, 4) / (pow(se1,4)/(d1->n-1) + pow(se2,4)/(d2->n-1));
 
 	p = pt(-fabs(t), dof);
-	/* Two tailed */
+	/* Two-tailed */
 	if (2 * p > 1 - conf) {
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
-		exit(0);
+		return;
 	}
 
 	q = qt(1 - (1 - conf)/2, dof);
 	printf("Difference at %.1f%% confidence\n", 100 * conf);
-	printf("diff: %g +/- %g [%g %g]\n", d2->mean - d1->mean, q * se,
+	printf("      %g +/- %g [%g %g]\n", d2->mean - d1->mean, q * se,
 	    (t - q) * se, (t + q) * se);
 	/* XXX should be base be d1 or d2??? */
 	printf("      %lf%% +/- %g%%\n", (d2->mean - d1->mean) * 100 / d1->mean,
@@ -284,7 +399,9 @@ main(int argc, char **argv)
 	struct dataset *d1, *d2;
 	char c;
 
-	while ((c = getopt(argc, argv, "c:C:")) != -1) {
+	seed = time(NULL);
+
+	while ((c = getopt(argc, argv, "c:C:p:s:")) != -1) {
 		switch (c) {
 		case 'c':
 			conf = strtod(optarg, NULL) / 100.0;
@@ -293,6 +410,12 @@ main(int argc, char **argv)
 			break;
 		case 'C':
 			col = atoi(optarg);
+			break;
+		case 'p':
+			perms = atoi(optarg);
+			break;
+		case 's':
+			seed = atoi(optarg);
 			break;
 		default:
 			usage();
@@ -307,12 +430,17 @@ main(int argc, char **argv)
 	d1 = read_data(argv[0]);
 	d2 = read_data(argv[1]);
 
+	srandom(seed);
+
 	printf("    N      Mean    Stddev     Min     25p     50p     75p"
 	    "     Max     Outliers\n");
 	summary(d1, sym[1]);
 	summary(d2, sym[2]);
 
-	welch(d1, d2);
+	if (perms)
+		permute(d1, d2);
+	else
+		welch(d1, d2);
 
 	return (0);
 }
