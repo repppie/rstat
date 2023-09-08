@@ -1,6 +1,7 @@
 /* Heavily inspired by ministat */
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <math.h>
 #include <err.h>
@@ -208,6 +209,8 @@ read_data(char *file)
 	} while (m < end);
 
 	qsort(d->vals, d->n, sizeof(double), cmp);
+	if (d->n < 3)
+		errx(1, "%s needs at least 3 data points", d->name);
 	printf("%c %s\n", sym[++nds], d->name);
 
 	return (d);
@@ -229,11 +232,13 @@ welch(struct dataset *d1, struct dataset *d2)
 	p = pt(-fabs(t), dof);
 	/* Two tailed */
 	if (2 * p > 1 - conf) {
-		printf("No difference proven at 95%% confidence\n");
+		printf("No difference proven at %.1f%% confidence\n", 100 *
+		    conf);
 		exit(0);
 	}
 
 	q = qt(1 - (1 - conf)/2, dof);
+	printf("Difference at %.1f%% confidence\n", 100 * conf);
 	printf("diff: %g +/- %g [%g %g]\n", d2->mean - d1->mean, q * se,
 	    (t - q) * se, (t + q) * se);
 	/* XXX should be base be d1 or d2??? */
@@ -267,22 +272,45 @@ summary(struct dataset *d, char s)
 	    quantile(d, 1), xout, out);
 }
 
+void
+usage(void)
+{
+	errx(1, "Usage: rstat <path> <path>\n");
+}
+
 int
 main(int argc, char **argv)
 {
 	struct dataset *d1, *d2;
+	char c;
 
-	if (argc < 3)
-		errx(1, "Usage: %s <path> <path>\n", argv[0]);
+	while ((c = getopt(argc, argv, "c:C:")) != -1) {
+		switch (c) {
+		case 'c':
+			conf = strtod(optarg, NULL) / 100.0;
+			if (conf <= 0 || conf >= 1)
+				errx(1, "confidence needs to be in (0, 100)");
+			break;
+		case 'C':
+			col = atoi(optarg);
+			break;
+		default:
+			usage();
+		}
+	}
+	argc -= optind;
+	argv += optind;
 
-	d1 = read_data(argv[1]);
-	d2 = read_data(argv[2]);
+	if (argc < 2)
+		usage();
+
+	d1 = read_data(argv[0]);
+	d2 = read_data(argv[1]);
 
 	printf("    N      Mean    Stddev     Min     25p     50p     75p"
 	    "     Max     Outliers\n");
 	summary(d1, sym[1]);
 	summary(d2, sym[2]);
-	printf("\n");
 
 	welch(d1, d2);
 
