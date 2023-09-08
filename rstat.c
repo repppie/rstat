@@ -238,7 +238,6 @@ read_data(char *file)
 	qsort(d->vals, d->n, sizeof(double), cmp);
 	if (d->n < 3)
 		errx(1, "%s needs at least 3 data points", d->name);
-	printf("%c %s\n", sym[++nds], d->name);
 
 	return (d);
 }
@@ -431,7 +430,6 @@ welch(struct dataset *d1, struct dataset *d2)
 	printf("Difference at %.1f%% confidence\n", 100 * conf);
 	printf("      %g +/- %g [%g %g]\n", d2->mean - d1->mean, q * se,
 	    (t - q) * se, (t + q) * se);
-	/* XXX should be base be d1 or d2??? */
 	printf("      %lf%% +/- %g%%\n", (d2->mean - d1->mean) * 100 / d1->mean,
 	    q * se * 100 / d1->mean);
 	printf("      (Welch's t %g p-val %g crit val %g se %g dof %g)\n", t,
@@ -465,7 +463,15 @@ summary(struct dataset *d, char s)
 void
 usage(void)
 {
-	errx(1, "Usage: rstat <path> <path>\n");
+	fprintf(stderr, "Usage: rstat [-b samples] [-c confidence] [-C column]"
+	    " [-p permutations] [-s seed] <file> [file ...]\n");
+	fprintf(stderr, "\t-b : Bootstrapped t-test with n samples\n");
+	fprintf(stderr, "\t-C : Column number to extract (starts at 1)\n");
+	fprintf(stderr, "\t-c : Confidence in percent (defaults to 95)\n");
+	fprintf(stderr, "\t-p : Permutation test with n permutations\n");
+	fprintf(stderr, "\t-s : Random seed\n");
+	
+	exit(1);
 }
 
 int
@@ -473,6 +479,7 @@ main(int argc, char **argv)
 {
 	struct dataset *d1, *d2;
 	char c;
+	int i;
 
 	seed = time(NULL);
 
@@ -506,23 +513,27 @@ main(int argc, char **argv)
 		usage();
 	if (boots && perms)
 		errx(1, "Only one of -b and -p can be set");
-
-	d1 = read_data(argv[0]);
-	d2 = read_data(argv[1]);
-
 	srandom(seed);
 
+	for (i = 0; i < argc; i++)
+		printf("%c %s\n", sym[i+1], argv[i]);
+
+	d1 = read_data(argv[0]);
 	printf("    N      Mean    Stddev     Min     25p     50p     75p"
 	    "     Max     Outliers\n");
-	summary(d1, sym[1]);
-	summary(d2, sym[2]);
-
-	if (boots)
-		bootstrap(d1, d2);
-	else if (perms)
-		permute(d1, d2);
-	else
-		welch(d1, d2);
+	summary(d1, sym[++nds]);
+	argv++;
+	while (--argc) {
+		d2 = read_data(argv[0]);
+		summary(d2, sym[++nds]);
+		if (boots)
+			bootstrap(d1, d2);
+		else if (perms)
+			permute(d1, d2);
+		else
+			welch(d1, d2);
+		argv++;
+	}
 
 	return (0);
 }
