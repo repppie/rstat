@@ -1,11 +1,10 @@
 PROG = rstat
 
-SRCS = rstat.c
+SRCS = rstat.cc
 HEADERS =
 OBJS = $(SRCS:.c=.o)
 
-CC = gcc
-yacc = yacc
+CC=clang++
 CFLAGS = -Wall -g
 LDFLAGS += -lm
 
