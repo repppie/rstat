@@ -15,4 +15,4 @@ clean:
 	rm -f $(OBJS) $(PROG)
 
 $(PROG): $(OBJS) $(HEADERS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS)
+	$(CC) -o $@ $(OBJS) $(LDFLAGS)

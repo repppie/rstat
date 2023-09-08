@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include <err.h>
+#include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
