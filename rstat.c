@@ -453,9 +453,9 @@ summary(struct dataset *d, char s)
 			out++;
 	}
 	printf("%c %3u %9.8g %9.8g %7.6g %7.6g %7.6g %7.6g %7.6g %4d"
-	    " (%d mild)\n", s,
+	    " (%d extreme)\n", s,
 	    d->n, d->mean, stddev(d), quantile(d, 0), q1, quantile(d, 0.5), q3,
-	    quantile(d, 1), xout, out);
+	    quantile(d, 1), out + xout, xout);
 }
 
 void
