@@ -366,20 +366,16 @@ permute(struct dataset *d1, struct dataset *d2)
 		/* Two-tailed */
 		if (fabs(welch_tstat(dd1, dd2)) >= fabs(t))
 			g++;
-		add_data(f, welch_tstat(dd1, dd2));
+		add_data(f, dd2->mean - dd1->mean);
 		free_dataset(dd1);
 		free_dataset(dd2);
 	}
 	qsort(f->vals, f->n, sizeof(double), cmp);
 
-	/*
-	 * XXX We can just look if p < alpha (not p * 2 < alpha), without
-	 * looking if we're in the extreme quantiles.
-	 */
 	ql = quantile(f, (1 - conf) / 2);
 	qu = quantile(f, 1 - (1 - conf) / 2);
 	p = (g + 1.0) / (perms + 1.0);
-	if (diff == 0 || (t > ql && t < qu))
+	if (diff == 0 || p > 1 - conf)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
