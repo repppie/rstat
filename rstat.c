@@ -306,7 +306,6 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 	n2 = new_dataset();
 	for (i = 0; i < d2->n; i++)
 		add_data(n2, d2->vals[i] - d2->mean + d->mean);
-	b = new_dataset();
 
 	g = 0;
 	for (i = 0; i < boots; i++) {
@@ -316,28 +315,36 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 		if (dd2->mean - dd1->mean && fabs(welch_tstat(dd1, dd2)) >=
 		    fabs(t))
 			g++;
-		add_data(b, dd2->mean - dd1->mean);
 		free_dataset(dd1);
 		free_dataset(dd2);
 	}
-	qsort(b->vals, b->n, sizeof(double), cmp);
 
 	p = (g + 1.0) / (boots + 1.0);
-	ql = quantile(b, (1 - conf) / 2);
-	qu = quantile(b, 1 - (1 - conf) / 2);
 	if (p > 1.0 - conf)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
+		struct dataset *ddd1, *ddd2;
+
+		/* Get CI with percentile method */
+		b = new_dataset();
+		for (i = 0; i < boots; i++) {
+			ddd1 = sample_repl(d1, d1->n);
+			ddd2 = sample_repl(d2, d2->n);
+			add_data(b, ddd2->mean - ddd1->mean);
+			free_dataset(ddd1);
+			free_dataset(ddd2);
+		}
+		qsort(b->vals, b->n, sizeof(double), cmp);
+		ql = quantile(b, (1 - conf) / 2);
+		qu = quantile(b, 1 - (1 - conf) / 2);
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
-		printf("      %g [%g %g]\n", diff, diff + ql * stddev(b),
-		    diff + qu * stddev(b));
+		printf("      %g [%g %g]\n", diff, ql, qu);
 		printf("      %lf%% [%g%% %g%%]\n", diff * 100 / d1->mean,
-		    (diff + ql * stddev(b)) * 100 / d1->mean,
-		    (diff + qu * stddev(b)) * 100 / d1->mean);
+		    ql * 100 / d1->mean, qu * 100 / d1->mean);
 	}
-	printf("      (%d bootstrap samples, p-val %g t %g se %g seed %d)\n",
-	    boots, p, t, stddev(b), seed);
+	printf("      (%d bootstrap samples, p-val %g t %g seed %d)\n",
+	    boots, p, t, seed);
 }
 
 /*
