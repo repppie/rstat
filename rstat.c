@@ -33,6 +33,12 @@ randint(int max)
 }
 
 double
+signum(double x)
+{
+	return ((x > 0) - (x < 0));
+}
+
+double
 integ(double lower, double upper, int m, double a,
     double (*f)(double x, double n))
 {
@@ -62,6 +68,10 @@ dt(double x, double n)
 double
 pt(double x, double dof)
 {
+	if (x == INFINITY)
+		return (1);
+	else if (x == -INFINITY)
+		return (0);
 	return (integ(-1000, x, 10000, dof, dt));
 }
 
@@ -276,7 +286,10 @@ welch_tstat(struct dataset *d1, struct dataset *d2)
 	se2 = sqrt(var(d2) / d2->n);
 	se = sqrt(se1 * se1 + se2 * se2);
 	t = d2->mean - d1->mean;
-	t /= se;
+	if (se == 0.0)
+		t = INFINITY * signum(t);
+	else
+		t /= se;
 	return (t);
 }
 
@@ -374,7 +387,7 @@ permute(struct dataset *d1, struct dataset *d2)
 	ql = quantile(f, (1 - conf) / 2);
 	qu = quantile(f, 1 - (1 - conf) / 2);
 	p = (g + 1.0) / (perms + 1.0);
-	if (t > ql && t < qu)
+	if (diff == 0 || (t > ql && t < qu))
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
@@ -393,18 +406,24 @@ permute(struct dataset *d1, struct dataset *d2)
 void
 welch(struct dataset *d1, struct dataset *d2)
 {
-	double dof, p, q, se, se1, se2, t;
+	double diff, dof, p, q, se, se1, se2, t;
 
 	se1 = sqrt(var(d1) / d1->n);
 	se2 = sqrt(var(d2) / d2->n);
 	se = sqrt(se1 * se1 + se2 * se2);
-	t = d2->mean - d1->mean;
-	t /= se;
-	dof = pow(se, 4) / (pow(se1,4)/(d1->n-1) + pow(se2,4)/(d2->n-1));
+	diff = t = d2->mean - d1->mean;
+	if (se == 0.0) {
+		t = INFINITY * signum(t);
+		dof = 0;
+	} else {
+		t /= se;
+		dof = pow(se, 4) / (pow(se1,4)/(d1->n-1) +
+		    pow(se2,4)/(d2->n-1));
+	}
 
 	p = pt(-fabs(t), dof);
 	/* Two-tailed */
-	if (2 * p > 1 - conf) {
+	if (2 * p > 1 - conf || p == 0 || diff == 0) {
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 		return;
@@ -412,9 +431,9 @@ welch(struct dataset *d1, struct dataset *d2)
 
 	q = qt(1 - (1 - conf)/2, dof);
 	printf("Difference at %.1f%% confidence\n", 100 * conf);
-	printf("      %g +/- %g [%g %g]\n", d2->mean - d1->mean, q * se,
-	    (t - q) * se, (t + q) * se);
-	printf("      %lf%% +/- %g%%\n", (d2->mean - d1->mean) * 100 / d1->mean,
+	printf("      %g +/- %g [%g %g]\n", diff, q * se, (t - q) * se,
+	    (t + q) * se);
+	printf("      %lf%% +/- %g%%\n", diff * 100 / d1->mean,
 	    q * se * 100 / d1->mean);
 	printf("      (Welch's t %g p-val %g crit val %g se %g dof %g)\n", t,
 	    2 * p, q, se, dof);
