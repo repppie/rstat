@@ -33,12 +33,6 @@ randint(int max)
 }
 
 double
-signum(double x)
-{
-	return ((x > 0) - (x < 0));
-}
-
-double
 integ(double lower, double upper, int m, double a,
     double (*f)(double x, double n))
 {
@@ -286,10 +280,7 @@ welch_tstat(struct dataset *d1, struct dataset *d2)
 	se2 = sqrt(var(d2) / d2->n);
 	se = sqrt(se1 * se1 + se2 * se2);
 	t = d2->mean - d1->mean;
-	if (se == 0.0)
-		t = INFINITY * signum(t);
-	else
-		t /= se;
+	t /= se; /* becomes NaN if the samples are constant */
 	return (t);
 }
 
@@ -322,9 +313,10 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 		dd1 = sample_repl(n1, n1->n);
 		dd2 = sample_repl(n2, n2->n);
 		/* Two-tailed */
-		if (fabs(welch_tstat(dd1, dd2)) >= fabs(t))
+		if (dd2->mean - dd1->mean && fabs(welch_tstat(dd1, dd2)) >=
+		    fabs(t))
 			g++;
-		add_data(b, welch_tstat(dd1, dd2));
+		add_data(b, dd2->mean - dd1->mean);
 		free_dataset(dd1);
 		free_dataset(dd2);
 	}
@@ -413,7 +405,7 @@ welch(struct dataset *d1, struct dataset *d2)
 	se = sqrt(se1 * se1 + se2 * se2);
 	diff = t = d2->mean - d1->mean;
 	if (se == 0.0) {
-		t = INFINITY * signum(t);
+		t = 0;
 		dof = 0;
 	} else {
 		t /= se;
