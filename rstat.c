@@ -22,7 +22,7 @@ struct dataset {
 };
 
 int col = 1;
-int boots, perms, seed;
+int boots, do_z, perms, seed;
 double conf = 0.95;
 #define	MAX_DS 8
 char sym[MAX_DS] = " x+*%#@O";
@@ -82,6 +82,38 @@ qt(double alpha, double dof)
 	/* Newton's method solving pt(x, dof) = alpha */
 	for (i = 0; i < 10; i++)
 		q -= (pt(q, dof) - alpha) / dt(q, dof);
+	return (q);
+}
+
+/* Normal distribution pdf */ 
+double
+dnorm(double x, double unused)
+{
+	return (exp(-x*x / 2.0) / sqrt(2 * M_PI));
+}
+
+/* Normal distribution cdf */ 
+double
+pnorm(double x)
+{
+	if (x == INFINITY)
+		return (1);
+	else if (x == -INFINITY)
+		return (0);
+	return (integ(-1000, x, 10000, 0, dnorm));
+}
+
+/* Normal distribution quantile */
+double
+qnorm(double alpha)
+{
+	double q;
+	int i;
+
+	q = 0;
+	/* Newton's method solving pt(x, dof) = alpha */
+	for (i = 0; i < 10; i++)
+		q -= (pnorm(q) - alpha) / dnorm(q, 0);
 	return (q);
 }
 
@@ -405,6 +437,30 @@ permute(struct dataset *d1, struct dataset *d2)
 	    seed);
 }
 
+void
+ztest(struct dataset *d1, struct dataset *d2)
+{
+	double diff, p, q, se, z;
+
+	diff = d2->mean - d1->mean;
+	se = sqrt(var(d1) / d1->n + var(d2) / d2->n); 
+	z = se != 0 ? diff / se : 0;
+	p = pnorm(-fabs(z));
+	if (2 * p > 1 - conf || p == 0 || diff == 0)
+		printf("No difference proven at %.1f%% confidence\n", 100 *
+		    conf);
+	else {
+		q = qnorm(1 - (1 - conf) / 2);
+		printf("Difference at %.1f%% confidence\n", 100 * conf);
+		printf("      %g +/- %g [%g %g]\n", diff, q * se, (z - q) * se,
+		    (z + q) * se);
+		printf("      %lf%% +/- %g%%\n", diff * 100 / d1->mean,
+		    q * se * 100 / d1->mean);
+		printf("      (z %g p-val %g crit val %g se %g)\n", z,
+		    2 * p, q, se);
+	}
+}
+
 /* Welch's t-test */
 void
 welch(struct dataset *d1, struct dataset *d2)
@@ -470,13 +526,14 @@ void
 usage(void)
 {
 	fprintf(stderr, "Usage: rstat [-b samples] [-c confidence] [-C column]"
-	    " [-p permutations] [-s seed] <file> [file ...]\n");
+	    " [-p permutations] [-s seed] [-nz] <file> [file ...]\n");
 	fprintf(stderr, "\t-b : Bootstrapped t-test with n samples\n");
 	fprintf(stderr, "\t-C : Column number to extract (starts at 1)\n");
 	fprintf(stderr, "\t-c : Confidence in percent (defaults to 95)\n");
 	fprintf(stderr, "\t-n : Print summary statistics only, no test\n");
 	fprintf(stderr, "\t-p : Permutation test with n permutations\n");
 	fprintf(stderr, "\t-s : Random seed\n");
+	fprintf(stderr, "\t-z : z-test\n");
 	
 	exit(1);
 }
@@ -491,7 +548,7 @@ main(int argc, char **argv)
 	seed = time(NULL);
 
 	no_test = 0;
-	while ((c = getopt(argc, argv, "b:c:C:np:s:")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:C:np:s:z")) != -1) {
 		switch (c) {
 		case 'b':
 			boots = atoi(optarg);
@@ -513,6 +570,9 @@ main(int argc, char **argv)
 		case 's':
 			seed = atoi(optarg);
 			break;
+		case 'z':
+			do_z = 1;
+			break;
 		default:
 			usage();
 		}
@@ -522,8 +582,8 @@ main(int argc, char **argv)
 
 	if (argc < 1)
 		usage();
-	if (boots && perms)
-		errx(1, "Only one of -b and -p can be set");
+	if (((boots > 0) + (perms > 0) + do_z) > 1)
+		errx(1, "Only one of -b, -p or -z can be set");
 	srandom(seed);
 
 	for (i = 0; i < argc; i++)
@@ -542,6 +602,8 @@ main(int argc, char **argv)
 				bootstrap(d1, d2);
 			else if (perms)
 				permute(d1, d2);
+			else if (do_z)
+				ztest(d1, d2);
 			else
 				welch(d1, d2);
 		}
