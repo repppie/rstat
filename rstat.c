@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
 #include <math.h>
 #include <err.h>
 #include <time.h>
@@ -15,6 +16,7 @@ struct dataset {
 	char *name;
 	double *vals;
 	int vs;
+	bool sorted;
 	double mean;
 	double ss;
 };
@@ -107,21 +109,6 @@ min(double a, double b)
 	return ((a < b) ? a : b);
 }
 
-double
-quantile(struct dataset *d, double q)
-{
-	double frac, _i, m;
-	int i, j;
-
-	/* linear interpolation between points */
-	m = (d->n - 1) * q;
-	i = max(0, min(d->n - 1, floor(m)));
-	j = max(0, min(d->n - 1, ceil(m)));
-	frac = modf(m, &_i);
-
-	return (d->vals[i] + (d->vals[j] - d->vals[i]) * frac);
-}
-
 int
 cmp(const void *_a, const void *_b)
 {
@@ -134,6 +121,26 @@ cmp(const void *_a, const void *_b)
 	else if (*a > *b)
 		return (1);
 	return (0);
+}
+
+double
+quantile(struct dataset *d, double q)
+{
+	double frac, _i, m;
+	int i, j;
+
+	if (!d->sorted) {
+		qsort(d->vals, d->n, sizeof(double), cmp);
+		d->sorted = 1;
+	}
+
+	/* linear interpolation between points */
+	m = (d->n - 1) * q;
+	i = max(0, min(d->n - 1, floor(m)));
+	j = max(0, min(d->n - 1, ceil(m)));
+	frac = modf(m, &_i);
+
+	return (d->vals[i] + (d->vals[j] - d->vals[i]) * frac);
 }
 
 struct dataset *
@@ -223,7 +230,6 @@ read_data(char *file)
 		}
 	} while (m < end);
 
-	qsort(d->vals, d->n, sizeof(double), cmp);
 	if (d->n < 3)
 		errx(1, "%s needs at least 3 data points", d->name);
 
@@ -284,6 +290,27 @@ welch_tstat(struct dataset *d1, struct dataset *d2)
 	return (t);
 }
 
+/* Bootstrap confidence interval of difference of means */
+void
+boot_ci(struct dataset *d1, struct dataset *d2, int n, double *lo, double *hi)
+{
+	struct dataset *b, *dd1, *dd2;
+	int i;
+
+	/* Get CI with percentile method */
+	b = new_dataset();
+	for (i = 0; i < n; i++) {
+		dd1 = sample_repl(d1, d1->n);
+		dd2 = sample_repl(d2, d2->n);
+		add_data(b, dd2->mean - dd1->mean);
+		free_dataset(dd1);
+		free_dataset(dd2);
+	}
+	*lo = quantile(b, (1 - conf) / 2);
+	*hi = quantile(b, 1 - (1 - conf) / 2);
+	free_dataset(b);
+}
+
 /*
  * Bootstrapped t-test without equality of variance.
  * See Algorithm 16.2 in Efron and Tibshirani (1993).
@@ -291,7 +318,7 @@ welch_tstat(struct dataset *d1, struct dataset *d2)
 void
 bootstrap(struct dataset *d1, struct dataset *d2)
 {
-	struct dataset *b, *d, *dd1, *dd2, *n1, *n2;
+	struct dataset *d, *dd1, *dd2, *n1, *n2;
 	double diff, p, ql, qu, t;
 	int i, g;
 
@@ -324,20 +351,7 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
-		struct dataset *ddd1, *ddd2;
-
-		/* Get CI with percentile method */
-		b = new_dataset();
-		for (i = 0; i < boots; i++) {
-			ddd1 = sample_repl(d1, d1->n);
-			ddd2 = sample_repl(d2, d2->n);
-			add_data(b, ddd2->mean - ddd1->mean);
-			free_dataset(ddd1);
-			free_dataset(ddd2);
-		}
-		qsort(b->vals, b->n, sizeof(double), cmp);
-		ql = quantile(b, (1 - conf) / 2);
-		qu = quantile(b, 1 - (1 - conf) / 2);
+		boot_ci(d1, d2, boots, &ql, &qu);
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
 		printf("      %g [%g %g]\n", diff, ql, qu);
 		printf("      %lf%% [%g%% %g%%]\n", diff * 100 / d1->mean,
@@ -355,7 +369,7 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 void
 permute(struct dataset *d1, struct dataset *d2)
 {
-	struct dataset *d, *dd1, *dd2, *f;
+	struct dataset *d, *dd1, *dd2;
 	double diff, p, ql, qu, t;
 	int i, g;
 
@@ -364,7 +378,6 @@ permute(struct dataset *d1, struct dataset *d2)
 	d = copy_dataset(d1);
 	for (i = 0; i < d2->n; i++)
 		add_data(d, d2->vals[i]);
-	f = new_dataset();
 
 	g = 0;
 	for (i = 0; i < perms; i++) {  
@@ -373,28 +386,23 @@ permute(struct dataset *d1, struct dataset *d2)
 		/* Two-tailed */
 		if (fabs(welch_tstat(dd1, dd2)) >= fabs(t))
 			g++;
-		add_data(f, dd2->mean - dd1->mean);
 		free_dataset(dd1);
 		free_dataset(dd2);
 	}
-	qsort(f->vals, f->n, sizeof(double), cmp);
 
-	ql = quantile(f, (1 - conf) / 2);
-	qu = quantile(f, 1 - (1 - conf) / 2);
 	p = (g + 1.0) / (perms + 1.0);
 	if (diff == 0 || p > 1 - conf)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
+		boot_ci(d1, d2, perms, &ql, &qu);
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
-		printf("      %g [%g %g]\n", diff, diff + ql * stddev(f),
-		    diff + qu * stddev(f));
+		printf("      %g [%g %g]\n", diff, ql, qu);
 		printf("      %lf%% [%g%% %g%%]\n", diff * 100 / d1->mean,
-		    (diff + ql * stddev(f)) * 100 / d1->mean,
-		    (diff + qu * stddev(f)) * 100 / d1->mean);
+		    ql * 100 / d1->mean, qu * 100 / d1->mean);
 	}
-	printf("      (%d permutations, p-val %g t %g se %g seed %d)\n", perms,
-	    p, t, stddev(f), seed);
+	printf("      (%d permutations, p-val %g t %g seed %d)\n", perms, p, t,
+	    seed);
 }
 
 /* Welch's t-test */
