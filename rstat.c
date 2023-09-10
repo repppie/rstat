@@ -446,19 +446,19 @@ ztest(struct dataset *d1, struct dataset *d2)
 	se = sqrt(var(d1) / d1->n + var(d2) / d2->n); 
 	z = se != 0 ? diff / se : 0;
 	p = pnorm(-fabs(z));
+	/* Two tailed */
+	q = qnorm(1 - (1 - conf) / 2);
 	if (2 * p > 1 - conf || p == 0 || diff == 0)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
-		q = qnorm(1 - (1 - conf) / 2);
 		printf("Difference at %.1f%% confidence\n", 100 * conf);
 		printf("      %g +/- %g [%g %g]\n", diff, q * se, (z - q) * se,
 		    (z + q) * se);
 		printf("      %lf%% +/- %g%%\n", diff * 100 / d1->mean,
 		    q * se * 100 / d1->mean);
-		printf("      (z %g p-val %g crit val %g se %g)\n", z,
-		    2 * p, q, se);
 	}
+	printf("      (z %g p-val %g crit val %g se %g)\n", z, 2 * p, q, se);
 }
 
 /* Welch's t-test */
@@ -482,18 +482,17 @@ welch(struct dataset *d1, struct dataset *d2)
 
 	p = pt(-fabs(t), dof);
 	/* Two-tailed */
-	if (2 * p > 1 - conf || p == 0 || diff == 0) {
+	q = qt(1 - (1 - conf)/2, dof);
+	if (2 * p > 1 - conf || p == 0 || diff == 0)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
-		return;
+	else {
+		printf("Difference at %.1f%% confidence\n", 100 * conf);
+		printf("      %g +/- %g [%g %g]\n", diff, q * se, (t - q) * se,
+		    (t + q) * se);
+		printf("      %lf%% +/- %g%%\n", diff * 100 / d1->mean,
+		    q * se * 100 / d1->mean);
 	}
-
-	q = qt(1 - (1 - conf)/2, dof);
-	printf("Difference at %.1f%% confidence\n", 100 * conf);
-	printf("      %g +/- %g [%g %g]\n", diff, q * se, (t - q) * se,
-	    (t + q) * se);
-	printf("      %lf%% +/- %g%%\n", diff * 100 / d1->mean,
-	    q * se * 100 / d1->mean);
 	printf("      (Welch's t %g p-val %g crit val %g se %g dof %g)\n", t,
 	    2 * p, q, se, dof);
 }
