@@ -379,7 +379,7 @@ bootstrap(struct dataset *d1, struct dataset *d2)
 	}
 
 	p = (g + 1.0) / (boots + 1.0);
-	if (p > 1.0 - conf)
+	if (diff == 0 || p > 1.0 - conf)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
@@ -448,7 +448,7 @@ ztest(struct dataset *d1, struct dataset *d2)
 	p = pnorm(-fabs(z));
 	/* Two tailed */
 	q = qnorm(1 - (1 - conf) / 2);
-	if (2 * p > 1 - conf || p == 0 || diff == 0)
+	if (2 * p > 1 - conf || diff == 0)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
@@ -483,7 +483,7 @@ welch(struct dataset *d1, struct dataset *d2)
 	p = pt(-fabs(t), dof);
 	/* Two-tailed */
 	q = qt(1 - (1 - conf)/2, dof);
-	if (2 * p > 1 - conf || p == 0 || diff == 0)
+	if (2 * p > 1 - conf || diff == 0)
 		printf("No difference proven at %.1f%% confidence\n", 100 *
 		    conf);
 	else {
